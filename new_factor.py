@@ -18,18 +18,20 @@ class NewFactor:
         self.codes = {
             'national': ['M1000158','M1000159','M1000160','M1000162','M1000164','M1000163','M1000166','M1000170'],
             'CDB'     : ['M1004263','M1004264','M1004265','M1004267','M1004269','M1004271','M1004273','M1004275'],
-            'FR007'   : ['M0048486','M0048487','M0048488','M0048490'],
-            'SHIBOR'  : ['M0048517','M0048518','M0048519','M0048521'],
+            'FR007'   : ['M0048484','M0048485','M0048486','M0048487','M0048490'],
+            'SHIBOR'  : ['M0048499','M0048500','M0048501','M0075930'],
             'perpetual':["R2314607","A1228046","J0232832","Z9025043","X3441834","R8982978"],
-            'tier2'   :["M1010704","M1010705","M1010706","M1010708","M1010710","M1010713"]
+            'tier2'   :["M1010704","M1010705","M1010706","M1010708","M1010710","M1010713"],
+            'NCD':      ['M1004902']
         }
         self.names = {
             'national': ['国债_1Y','国债_2Y','国债_3Y','国债_5Y','国债_7Y','国债_10Y','国债_30Y','国债_50Y'],
             'CDB'     : ['国开债_1Y','国开债_2Y','国开债_3Y','国开债_5Y','国开债_7Y','国开债_10Y','国开债_30Y','国开债_50Y'],
-            'FR007'   : ['FR007_1Y','FR007_2Y','FR007_3Y','FR007_5Y'],
+            'FR007'   : ['FR007_6M','FR007_9M','FR007_1Y','FR007_2Y','FR007_5Y'],
             'SHIBOR'  : ['SHIBOR_1Y','SHIBOR_2Y','SHIBOR_3Y','SHIBOR_5Y'],
             'perpetual':['永续债_1Y','永续债_2Y','永续债_3Y','永续债_5Y','永续债_7Y','永续债_10Y'],
-            'tier2'   : ['二级资本债_1Y','二级资本债_2Y','二级资本债_3Y','二级资本债_5Y','二级资本债_7Y','二级资本债_10Y']
+            'tier2'   : ['二级资本债_1Y','二级资本债_2Y','二级资本债_3Y','二级资本债_5Y','二级资本债_7Y','二级资本债_10Y'],
+            'NCD' :     ['同业存单_1Y']
         }
 
         # 日期参数
@@ -226,5 +228,18 @@ class NewFactor:
                 # 按 index 全连接
                 merged_df = merged_df.merge(df, left_index=True, right_index=True, how="outer")
         merged_df.to_excel(f"{path}/全因子.xlsx")
+
+if __name__ == "__main__":
+    myfactor = NewFactor()
+    #    myfactor.get_data('national').to_excel("国债.xlsx")
+    #   myfactor.get_spread('national').to_excel('国债期限利差.xlsx')
+    #    myfactor.get_spread_by_codes('CDB','national').to_excel("国债国开利差.xlsx")
+    #    myfactor.get_spread_by_codes('perpetual','tier2').to_excel("永续二级利差.xlsx")
+    #    myfactor.get_spread_by_codes('national','national').to_excel("永续国债利差.xlsx")
+    #    myfactor.get_spread_by_codes('tier2','CDB').to_excel("二级国开利差.xlsx")
+    #    myfactor.get_spread_by_codes('SHIBOR','FR007').to_excel("SHIBOR FR007利差.xlsx")
+    #    myfactor.get_spread_by_codes('national','FR007').to_excel("FR007 国债利差.xlsx")
+    #    myfactor.get_spread_by_codes('NCD','FR007').to_excel("FR007 同业存单.xlsx")
+    myfactor.merge_data() 
 
 
