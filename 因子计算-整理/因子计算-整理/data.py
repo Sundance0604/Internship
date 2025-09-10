@@ -183,7 +183,7 @@ def update_data(date_end):
     data = get_data(data_name, date_start, date_end)
     save_and_update_data(data, data_name, date_start, date_end) 
     
-DATA_PATH = '/data' 
+DATA_PATH = './data' 
 try:
     w.start()
     w.isconnected()
