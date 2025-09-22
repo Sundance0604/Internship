@@ -42,7 +42,7 @@ class NewFactor:
         self.cache = {}
 
         # 保存路径
-        self.path = 'factor_data/'
+        self.path = "D:\\mycodelife\\workshop\\yinhe\\factor_data"
         # Wind 连接
         if auto_connect:
             w.start()
@@ -229,17 +229,20 @@ class NewFactor:
                 merged_df = merged_df.merge(df, left_index=True, right_index=True, how="outer")
         merged_df.to_excel(f"{path}/全因子.xlsx")
 
+    def save_data(self, myfactor):
+        myfactor.get_data('national').to_excel("国债.xlsx")
+        print("已保存")
+        myfactor.get_spread('national').to_excel('国债期限利差.xlsx')
+        myfactor.get_spread_by_codes('CDB','national').to_excel("国债国开利差.xlsx")
+        myfactor.get_spread_by_codes('perpetual','tier2').to_excel("永续二级利差.xlsx")
+        myfactor.get_spread_by_codes('national','national').to_excel("永续国债利差.xlsx")
+        myfactor.get_spread_by_codes('tier2','CDB').to_excel("二级国开利差.xlsx")
+        myfactor.get_spread_by_codes('SHIBOR','FR007').to_excel("SHIBOR FR007利差.xlsx")
+        myfactor.get_spread_by_codes('national','FR007').to_excel("FR007 国债利差.xlsx")
+        myfactor.get_spread_by_codes('NCD','FR007').to_excel("FR007 同业存单.xlsx")
 if __name__ == "__main__":
     myfactor = NewFactor()
-    #    myfactor.get_data('national').to_excel("国债.xlsx")
-    #   myfactor.get_spread('national').to_excel('国债期限利差.xlsx')
-    #    myfactor.get_spread_by_codes('CDB','national').to_excel("国债国开利差.xlsx")
-    #    myfactor.get_spread_by_codes('perpetual','tier2').to_excel("永续二级利差.xlsx")
-    #    myfactor.get_spread_by_codes('national','national').to_excel("永续国债利差.xlsx")
-    #    myfactor.get_spread_by_codes('tier2','CDB').to_excel("二级国开利差.xlsx")
-    #    myfactor.get_spread_by_codes('SHIBOR','FR007').to_excel("SHIBOR FR007利差.xlsx")
-    #    myfactor.get_spread_by_codes('national','FR007').to_excel("FR007 国债利差.xlsx")
-    #    myfactor.get_spread_by_codes('NCD','FR007').to_excel("FR007 同业存单.xlsx")
-    myfactor.merge_data() 
-
+    # myfactor.save_data(myfactor)
+    # myfactor.merge_data() 
+    myfactor.get_data('FR007').to_excel("FR007.xlsx")
 
