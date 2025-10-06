@@ -56,23 +56,37 @@ def data_split(df_clean):
     df_test  = df_clean.iloc[split_point:]
     return df_train, df_test
 # 保存预测结果到 Excel
-def save_predictions_to_excel(predictions, test_data, output_dir="result"):
+def save_predictions_to_excel(predictions, test_data_map, output_dir="result"):
     os.makedirs(output_dir, exist_ok=True)
     today_str = datetime.today().strftime("%Y%m%d")
     output_file = os.path.join(output_dir, f"{today_str}-predict.xlsx")
 
     with pd.ExcelWriter(output_file) as writer:
         for pred_label, preds in predictions.items():
-            # 构造结果表：包含真实值和预测
+            td = test_data_map.get(pred_label, None)
+            if td is None or td.empty:
+                # 没有数据就写个空壳，避免报错
+                pd.DataFrame(columns=["date", pred_label, "label", "prediction"]).to_excel(
+                    writer, sheet_name=pred_label, index=False
+                )
+                continue
+
+            # 构造结果表：包含真实值、特征值和预测
             df_out = pd.DataFrame({
-                "date": test_data.index,                  # 日期
-                pred_label: test_data[pred_label],        # 对应的特征值
-                "label": test_data["label"],              # 真实标签
-                "prediction": preds                       # 模型预测
+                "date": td.index,            # 日期（索引）
+                pred_label: td[pred_label],  # 对应特征列
+                "label": td["label"],        # 真实标签
             })
-            # sheet 名直接用 pred_label
+
+            # 对齐预测结果（preds 通常为 Series，索引与 td 一致；稳妥起见重建为按 td.index 对齐）
+            preds_aligned = pd.Series(preds, index=td.index)
+            df_out["prediction"] = preds_aligned.values
+
+            # 写入各自 sheet
             df_out.to_excel(writer, sheet_name=pred_label, index=False)
+
     print(f"预测结果已保存到 {output_file}")
+
 
 
 if __name__ == "__main__":
@@ -82,25 +96,60 @@ if __name__ == "__main__":
     # 参数具体信息详见AutoGluon文档
     retrain = False  
     if retrain == False:
-        pred_labels = ['basis__TL', 'basis__T', 'basis__TF', 'basis__TS']
-        start_date = '2025/09/25'  # 指定预测开始的日期，不要早于训练集的结束日期
+        pred_labels = ['basis__TL', 'basis__T', 'basis__TF', 'basis__TS'] # 预测目标列名列表
+        start_date = pd.to_datetime('2025-07-25')  # 设置预测起始日期
         data.run_data()
         factor.run_factor()
         myfactor = nf.NewFactor()
         myfactor.get_data('basis').to_excel('factor/basis.xlsx')
         df_raw = merge_excels_by_first_col('factor', 'merged.xlsx')
-        df_raw.set_index('date', inplace=True)
+        
+        if isinstance(df_raw.index, pd.DatetimeIndex):
+            df_raw = df_raw.reset_index()
+
+        # 统一列名
+        if 'date' not in df_raw.columns:
+            df_raw.rename(columns={df_raw.columns[0]: 'date'}, inplace=True)
+
+        # 1) 先当字符串日期解析
+        df_raw['date'] = pd.to_datetime(df_raw['date'], errors='coerce')
+
+        df_raw = df_raw.dropna(subset=['date']).copy()
+        df_raw = df_raw.sort_values('date').set_index('date')
+
+        print("df_raw.index.min() =", df_raw.index.min())
+        print("df_raw.index.max() =", df_raw.index.max())
+        print("start_date         =", start_date)
         predictions = {}
-        # 涨跌标签：下一期比当前期涨为 1，跌为 -1，不变为 0
+        test_data_map = {}
+
         for pred_label in pred_labels:
             df_clean = df_raw.copy()
+
+            for base_col in pred_labels:
+                if base_col in df_clean.columns:
+                    df_clean[f'{base_col}_diff'] = df_clean[base_col].diff()
+                else:
+                    print(f"[WARN] {base_col} 不存在于 df_clean.columns")
+
+            # ========== 生成标签 ==========
             df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
                 lambda x: 1 if x > 0 else -1 if x < 0 else 0
             )
             df_clean = df_clean.iloc[:-1]
+
+            # ========== 预测 ==========
             predictor = TabularPredictor.load("AutogluonModels\\best_" + pred_label)
             test_data = df_clean[df_clean.index > start_date]
-            print(f"Evaluating model for {pred_label} on test data after {start_date}:")
-            predictions[pred_label] = predictor.predict(test_data)
-        save_predictions_to_excel(predictions, test_data)
+            print(f"Evaluating model for {pred_label} on test data from {start_date}: rows={len(test_data)}")
+
+            if len(test_data) == 0:
+                print(f"[WARN] {pred_label} 在 {start_date} 及之后没有数据，跳过预测与保存。")
+                continue
+
+            preds = predictor.predict(test_data)
+            predictions[pred_label] = preds
+            test_data_map[pred_label] = test_data
+
+        save_predictions_to_excel(predictions, test_data_map)
         
