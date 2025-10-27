@@ -7,6 +7,13 @@ import factor
 import re
 import os, sys
 from datetime import datetime
+import pathlib
+import platform
+
+# 如果是在 Windows 上运行，从 Linux 保存的模型加载：
+if platform.system() == "Windows":
+    # 把 PosixPath 替换成 WindowsPath，防止 pickle 报错
+    pathlib.PosixPath = pathlib.WindowsPath
 
 # 把脚本所在目录设为当前工作目录
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -56,7 +63,7 @@ def data_split(df_clean):
     df_test  = df_clean.iloc[split_point:]
     return df_train, df_test
 # 保存预测结果到 Excel
-def save_predictions_to_excel(predictions, test_data_map, output_dir="result"):
+def save_predictions_to_excel(predictions, test_data_map, output_dir="result", inverse=False):
     os.makedirs(output_dir, exist_ok=True)
     today_str = datetime.today().strftime("%Y%m%d")
     output_file = os.path.join(output_dir, f"{today_str}-predict.xlsx")
@@ -81,29 +88,70 @@ def save_predictions_to_excel(predictions, test_data_map, output_dir="result"):
             # 对齐预测结果（preds 通常为 Series，索引与 td 一致；稳妥起见重建为按 td.index 对齐）
             preds_aligned = pd.Series(preds, index=td.index)
             df_out["prediction"] = preds_aligned.values
-
+            if inverse:
+                df_out["prediction"] = -df_out["prediction"]
+                df_out["label"] = -df_out["label"]
             # 写入各自 sheet
             df_out.to_excel(writer, sheet_name=pred_label, index=False)
 
     print(f"预测结果已保存到 {output_file}")
 
+def replace_any_date(df: pd.DataFrame, new_date: str) -> pd.DataFrame:
+    """
+    替换列名中任意位置的 8 位日期（如 20250924）为指定的新日期字符串。
+    参数:
+        df (pd.DataFrame): 原始 DataFrame。
+        new_date (str): 新日期字符串，格式为 'YYYYMMDD'（8位数字）。
+    返回:
+        pd.DataFrame: 替换列名后的 DataFrame。
+    """
+    pattern = re.compile(r'\b\d{8}\b')  # 匹配独立的8位数字，避免误替非日期数字片段
 
+    new_columns = [pattern.sub(new_date, col) for col in df.columns]
+    df_renamed = df.copy()
+    df_renamed.columns = new_columns
+    return df_renamed
 
 if __name__ == "__main__":
     # 是否重新训练模型，没有GPU会很慢，一个模型大概50分钟（如果采用best参数）
     # 如果不重新训练，则直接加载已有模型进行预测
     # 重新训练时，模型会保存在 AutogluonModels 文件夹下
     # 参数具体信息详见AutoGluon文档
-    retrain = False  
+    models = {
+        '基差':['basis__TL', 'basis__T', 'basis__TF', 'basis__TS'],
+        'tier2':['tier2__二级资本债_5Y'],
+        'FR007':['FR007__FR007_1Y', 'FR007__FR007_5Y'],
+        '国债':['national__国债_10Y'],
+        '国开债':['CDB__国开债_10Y'],
+        '黄金':['gold__收盘价']
+    }
+    label_date = {
+        '基差':'20250924',
+        'tier2':['20251017','20240603'],
+        'FR007':['20251016','20240108']
+    }
+    inverse_labels = ['基差', 'tier2', 'FR007', '黄金']  # 这些指标的标签取反
+    retrain = False 
+    inverse = True # 基差、二级资本债、FR007，黄金的指标取反（训练时搞忘了）
     if retrain == False:
-        pred_labels = ['basis__TL', 'basis__T', 'basis__TF', 'basis__TS'] # 预测目标列名列表
-        start_date = pd.to_datetime('2025-07-25')  # 设置预测起始日期
-        data.run_data()
-        factor.run_factor()
-        myfactor = nf.NewFactor()
-        myfactor.get_data('basis').to_excel('factor/basis.xlsx')
-        df_raw = merge_excels_by_first_col('factor', 'merged.xlsx')
-        
+        target = 'FR007'  # 选择需要预测的目标
+        pred_labels = models[target] # 预测目标列名列表
+        start_date = pd.to_datetime(label_date[target][1])  # 设置预测起始日期
+        # old_merge_file = pd.read_excel('merged_20250924.xlsx')
+        #last_date = old_merge_file['date'].max()
+        last_date = label_date[target][0]
+        print("last_date =", last_date)
+        # data.run_data()
+        factor.run_factor(date_end=last_date)
+        myfactor = nf.NewFactor(end_date=last_date)
+        # 输入对应指标
+        today_str = datetime.today().strftime("%Y%m%d")
+        myfactor.get_data(target).to_excel(f'factor/{target}.xlsx')
+        df_raw = merge_excels_by_first_col('factor', f'merged_{target}_{label_date[target][0]}.xlsx')
+        df_raw = replace_any_date(df_raw, label_date[target][0])
+        # df_raw = pd.concat([old_merge_file, df_raw], ignore_index=True)
+        # df_raw.to_excel(f'merged_{today_str}.xlsx', index=False)
+
         if isinstance(df_raw.index, pd.DatetimeIndex):
             df_raw = df_raw.reset_index()
 
@@ -133,13 +181,20 @@ if __name__ == "__main__":
                     print(f"[WARN] {base_col} 不存在于 df_clean.columns")
 
             # ========== 生成标签 ==========
-            df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
-                lambda x: 1 if x > 0 else -1 if x < 0 else 0
-            )
+            if inverse:
+                df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
+                    lambda x: 1 if x > 0 else -1 if x < 0 else 0
+                )
+            else:
+                df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
+                    lambda x: -1 if x > 0 else (1 if x < 0 else 0)
+                )
+                # 若为 0，则继承前一个标签
+                df_clean['label'] = df_clean['label'].replace(0, method='ffill')
             df_clean = df_clean.iloc[:-1]
 
             # ========== 预测 ==========
-            predictor = TabularPredictor.load("AutogluonModels\\best_" + pred_label)
+            predictor = TabularPredictor.load("AutogluonModels\\best_" + pred_label, require_py_version_match=False)
             test_data = df_clean[df_clean.index > start_date]
             print(f"Evaluating model for {pred_label} on test data from {start_date}: rows={len(test_data)}")
 
@@ -151,5 +206,5 @@ if __name__ == "__main__":
             predictions[pred_label] = preds
             test_data_map[pred_label] = test_data
 
-        save_predictions_to_excel(predictions, test_data_map)
+        save_predictions_to_excel(predictions, test_data_map, inverse=inverse)
         

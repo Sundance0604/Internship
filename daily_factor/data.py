@@ -183,7 +183,7 @@ def update_data(date_end):
     data_name = '交易日期'
     data = get_data(data_name, date_start, date_end)
     save_and_update_data(data, data_name, date_start, date_end) 
-def run_data():
+def run_data(date_start = 20170101):
     try:
         w.start()
         w.isconnected()
@@ -191,7 +191,6 @@ def run_data():
         print(e)
     ##### 修改以下数据 #####
     # 因子保存路径
-    date_start = 20170101
     date_end = int(time.strftime('%Y%m%d'))
     # 获取当前日期的 yyyymmdd 格式
     ######################

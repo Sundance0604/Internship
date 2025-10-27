@@ -13,7 +13,7 @@ class NewFactor:
     - get_spread_by_codes(bonds1, bonds2, ...): 计算两类曲线在相同后缀(如 '1Y')下的利差（如 国债10Y-国开10Y）
     """
 
-    def __init__(self, start_date=20170102, end_date=None, auto_connect=True):
+    def __init__(self, start_date=20170102, end_date=int(time.strftime('%Y%m%d')), auto_connect=True):
         # 代码和列名的映射
         self.codes = {
             'national': ['M1000158','M1000159','M1000160','M1000162','M1000164','M1000163','M1000166','M1000170'],
@@ -39,8 +39,12 @@ class NewFactor:
         }
 
         # 日期参数
+        if type(start_date) == str:
+            start_date = int(pd.to_datetime(start_date).strftime('%Y%m%d'))
         self.start_date = start_date
-        self.end_date   = end_date if end_date is not None else int(time.strftime('%Y%m%d'))
+        if type(end_date) == str:
+            end_date = int(pd.to_datetime(end_date).strftime('%Y%m%d'))
+        self.end_date = end_date
 
         # 简单缓存：key = (bonds_name, start_int, end_int)
         self.cache = {}

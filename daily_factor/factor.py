@@ -546,10 +546,11 @@ def update_factor(date_end):
     save_combine_factor(date_start, date_end)
 
 
-def run_factor():
-
-    date_start = 20170101
-    date_end = int(time.strftime('%Y%m%d'))
+def run_factor(date_start=20170101,date_end=int(time.strftime('%Y%m%d'))):
+    if type(date_start) == str:
+        date_start = int(pd.to_datetime(date_start).strftime('%Y%m%d'))
+    if type(date_end) == str:
+        date_end =  int(pd.to_datetime(date_end).strftime('%Y%m%d'))
 
     # 目前无权限, 需要在您电脑上运行的代码部分 #
     factor_name = '利率利差'
