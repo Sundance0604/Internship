@@ -112,6 +112,16 @@ def replace_any_date(df: pd.DataFrame, new_date: str) -> pd.DataFrame:
     df_renamed.columns = new_columns
     return df_renamed
 
+def delete_files_in_directory(directory_path):
+    """
+    删除指定路径下的所有文件，但不删除文件夹。
+    """
+    # 遍历目录下的所有文件
+    for filename in os.listdir(directory_path):
+        file_path = os.path.join(directory_path, filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)  
+
 if __name__ == "__main__":
     # 是否重新训练模型，没有GPU会很慢，一个模型大概50分钟（如果采用best参数）
     # 如果不重新训练，则直接加载已有模型进行预测
@@ -131,80 +141,85 @@ if __name__ == "__main__":
         'FR007':['20251016','20240108']
     }
     inverse_labels = ['基差', 'tier2', 'FR007', '黄金']  # 这些指标的标签取反
-    retrain = False 
     inverse = True # 基差、二级资本债、FR007，黄金的指标取反（训练时搞忘了）
-    if retrain == False:
-        target = 'FR007'  # 选择需要预测的目标
-        pred_labels = models[target] # 预测目标列名列表
-        start_date = pd.to_datetime(label_date[target][1])  # 设置预测起始日期
-        # old_merge_file = pd.read_excel('merged_20250924.xlsx')
-        #last_date = old_merge_file['date'].max()
-        last_date = label_date[target][0]
+    add_result = True  # 已有因子数据时，更新因子数据（不重新取数）
+    target = 'FR007'  # 选择需要预测的目标
+    pred_labels = models[target] # 预测目标列名列表
+    old_file_path = 'merged_FR007_20251029.xlsx'  # 旧的合并文件路径，用于追加结果
+    start_date = pd.to_datetime(label_date[target][1])  # 这是在训练模型时测试集开始的时间
+    today_str = datetime.today().strftime("%Y%m%d")
+    delete_files_in_directory('factor')  # 清空因子文件夹，防止旧文件干扰合并
+    if add_result: 
+        old_merge_file = pd.read_excel(old_file_path)
+        last_date = old_merge_file['date'].max()
+        last_date = last_date.replace('-', '')
+        last_date = str(int(last_date) + 1)
         print("last_date =", last_date)
-        # data.run_data()
-        factor.run_factor(date_end=last_date)
-        myfactor = nf.NewFactor(end_date=last_date)
-        # 输入对应指标
-        today_str = datetime.today().strftime("%Y%m%d")
-        myfactor.get_data(target).to_excel(f'factor/{target}.xlsx')
-        df_raw = merge_excels_by_first_col('factor', f'merged_{target}_{label_date[target][0]}.xlsx')
-        df_raw = replace_any_date(df_raw, label_date[target][0])
-        # df_raw = pd.concat([old_merge_file, df_raw], ignore_index=True)
-        # df_raw.to_excel(f'merged_{today_str}.xlsx', index=False)
+        factor.run_factor(date_start=last_date)
+        myfactor = nf.NewFactor(start_date=last_date)
+    else:
+        # data.run_data() # 第一次运行需要
+        factor.run_factor(date_end="20251016")
+        myfactor = nf.NewFactor(end_date="20251016")
+    myfactor.get_data(target).to_excel(f'factor/{target}.xlsx')
+    df_raw = merge_excels_by_first_col('factor', f'merged_{target}_{today_str}.xlsx')
+    df_raw = replace_any_date(df_raw, label_date[target][0])
+    if add_result:
+        df_raw = pd.concat([old_merge_file, df_raw], ignore_index=True)
+        df_raw.to_excel(f'merged_{today_str}.xlsx', index=False)
+    if isinstance(df_raw.index, pd.DatetimeIndex):
+        df_raw = df_raw.reset_index()
 
-        if isinstance(df_raw.index, pd.DatetimeIndex):
-            df_raw = df_raw.reset_index()
+    # 统一列名
+    if 'date' not in df_raw.columns:
+        df_raw.rename(columns={df_raw.columns[0]: 'date'}, inplace=True)
 
-        # 统一列名
-        if 'date' not in df_raw.columns:
-            df_raw.rename(columns={df_raw.columns[0]: 'date'}, inplace=True)
+    # 1) 先当字符串日期解析
+    df_raw['date'] = pd.to_datetime(df_raw['date'], errors='coerce')
 
-        # 1) 先当字符串日期解析
-        df_raw['date'] = pd.to_datetime(df_raw['date'], errors='coerce')
+    df_raw = df_raw.dropna(subset=['date']).copy()
+    df_raw = df_raw.sort_values('date').set_index('date')
 
-        df_raw = df_raw.dropna(subset=['date']).copy()
-        df_raw = df_raw.sort_values('date').set_index('date')
+    print("df_raw.index.min() =", df_raw.index.min())
+    print("df_raw.index.max() =", df_raw.index.max())
+    print("start_date         =", start_date)
+    predictions = {}
+    test_data_map = {}
 
-        print("df_raw.index.min() =", df_raw.index.min())
-        print("df_raw.index.max() =", df_raw.index.max())
-        print("start_date         =", start_date)
-        predictions = {}
-        test_data_map = {}
+    for pred_label in pred_labels:
+        df_clean = df_raw.copy()
 
-        for pred_label in pred_labels:
-            df_clean = df_raw.copy()
-
-            for base_col in pred_labels:
-                if base_col in df_clean.columns:
-                    df_clean[f'{base_col}_diff'] = df_clean[base_col].diff()
-                else:
-                    print(f"[WARN] {base_col} 不存在于 df_clean.columns")
-
-            # ========== 生成标签 ==========
-            if inverse:
-                df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
-                    lambda x: 1 if x > 0 else -1 if x < 0 else 0
-                )
+        for base_col in pred_labels:
+            if base_col in df_clean.columns:
+                df_clean[f'{base_col}_diff'] = df_clean[base_col].diff()
             else:
-                df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
-                    lambda x: -1 if x > 0 else (1 if x < 0 else 0)
-                )
-                # 若为 0，则继承前一个标签
-                df_clean['label'] = df_clean['label'].replace(0, method='ffill')
-            df_clean = df_clean.iloc[:-1]
+                print(f"[WARN] {base_col} 不存在于 df_clean.columns")
 
-            # ========== 预测 ==========
-            predictor = TabularPredictor.load("AutogluonModels\\best_" + pred_label, require_py_version_match=False)
-            test_data = df_clean[df_clean.index > start_date]
-            print(f"Evaluating model for {pred_label} on test data from {start_date}: rows={len(test_data)}")
+        # ========== 生成标签 ==========
+        if inverse:
+            df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
+                lambda x: 1 if x > 0 else -1 if x < 0 else 0
+            )
+        else:
+            df_clean['label'] = (df_clean[pred_label].shift(-1) - df_clean[pred_label]).apply(
+                lambda x: -1 if x > 0 else (1 if x < 0 else 0)
+            )
+            # 若为 0，则继承前一个标签
+            df_clean['label'] = df_clean['label'].replace(0, method='ffill')
+        df_clean = df_clean.iloc[:-1]
 
-            if len(test_data) == 0:
-                print(f"[WARN] {pred_label} 在 {start_date} 及之后没有数据，跳过预测与保存。")
-                continue
+        # ========== 预测 ==========
+        predictor = TabularPredictor.load("AutogluonModels\\best_" + pred_label, require_py_version_match=False)
+        test_data = df_clean[df_clean.index > start_date]
+        print(f"Evaluating model for {pred_label} on test data from {start_date}: rows={len(test_data)}")
 
-            preds = predictor.predict(test_data)
-            predictions[pred_label] = preds
-            test_data_map[pred_label] = test_data
+        if len(test_data) == 0:
+            print(f"[WARN] {pred_label} 在 {start_date} 及之后没有数据，跳过预测与保存。")
+            continue
 
-        save_predictions_to_excel(predictions, test_data_map, inverse=inverse)
+        preds = predictor.predict(test_data)
+        predictions[pred_label] = preds
+        test_data_map[pred_label] = test_data
+
+    save_predictions_to_excel(predictions, test_data_map, inverse=inverse)
         
